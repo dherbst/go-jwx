@@ -3,6 +3,7 @@ package jwe
 import (
 	"github.com/lestrrat/go-jwx/internal/debug"
 	"github.com/lestrrat/go-jwx/jwa"
+	"github.com/pkg/errors"
 )
 
 func (c GenericContentCrypt) Algorithm() jwa.ContentEncryptionAlgorithm {
@@ -20,7 +21,7 @@ func (c GenericContentCrypt) Encrypt(cek, plaintext, aad []byte) ([]byte, []byte
 		if debug.Enabled {
 			debug.Printf("cipher.encrypt failed")
 		}
-		return nil, nil, nil, err
+		return nil, nil, nil, errors.Wrap(err, "cipher.encrypt failed")
 	}
 
 	return iv, encrypted, tag, nil

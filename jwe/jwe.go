@@ -6,12 +6,12 @@ import (
 	"crypto/ecdsa"
 	"crypto/rsa"
 	"encoding/json"
-	"errors"
 
 	"github.com/lestrrat/go-jwx/buffer"
 	"github.com/lestrrat/go-jwx/internal/debug"
 	"github.com/lestrrat/go-jwx/jwa"
 	"github.com/lestrrat/go-jwx/jwk"
+	"github.com/pkg/errors"
 )
 
 // Encrypt takes the plaintext payload and encrypts it in JWE compact format.
@@ -31,7 +31,7 @@ func Encrypt(payload []byte, keyalg jwa.KeyEncryptionAlgorithm, key interface{},
 		}
 		keyenc, err = NewRSAPKCSKeyEncrypt(keyalg, pubkey)
 		if err != nil {
-			return nil, err
+			return nil, errors.Wrap(err, "failed to create RSA PKCS encrypter")
 		}
 		keysize = contentcrypt.KeySize() / 2
 	case jwa.RSA_OAEP, jwa.RSA_OAEP_256:
@@ -41,7 +41,7 @@ func Encrypt(payload []byte, keyalg jwa.KeyEncryptionAlgorithm, key interface{},
 		}
 		keyenc, err = NewRSAOAEPKeyEncrypt(keyalg, pubkey)
 		if err != nil {
-			return nil, err
+			return nil, errors.Wrap(err, "failed to create RSA OAEP encrypter")
 		}
 		keysize = contentcrypt.KeySize() / 2
 	case jwa.A128KW, jwa.A192KW, jwa.A256KW:
@@ -51,7 +51,7 @@ func Encrypt(payload []byte, keyalg jwa.KeyEncryptionAlgorithm, key interface{},
 		}
 		keyenc, err = NewKeyWrapEncrypt(keyalg, sharedkey)
 		if err != nil {
-			return nil, err
+			return nil, errors.Wrap(err, "failed to create key wrap encrypter")
 		}
 		keysize = contentcrypt.KeySize()
 	case jwa.ECDH_ES_A128KW, jwa.ECDH_ES_A192KW, jwa.ECDH_ES_A256KW:
@@ -61,7 +61,7 @@ func Encrypt(payload []byte, keyalg jwa.KeyEncryptionAlgorithm, key interface{},
 		}
 		keyenc, err = NewEcdhesKeyWrapEncrypt(keyalg, pubkey)
 		if err != nil {
-			return nil, err
+			return nil, errors.Wrap(err, "failed to create ECDHS key wrap encrypter")
 		}
 		keysize = contentcrypt.KeySize()
 	case jwa.ECDH_ES:
@@ -74,7 +74,7 @@ func Encrypt(payload []byte, keyalg jwa.KeyEncryptionAlgorithm, key interface{},
 		if debug.Enabled {
 			debug.Printf("Encrypt: unknown key encryption algorithm: %s", keyalg)
 		}
-		return nil, ErrUnsupportedAlgorithm
+		return nil, errors.Wrap(ErrUnsupportedAlgorithm, "failed to create encrypter")
 	}
 
 	enc := NewMultiEncrypt(contentcrypt, NewRandomKeyGenerate(keysize), keyenc)
@@ -83,7 +83,7 @@ func Encrypt(payload []byte, keyalg jwa.KeyEncryptionAlgorithm, key interface{},
 		if debug.Enabled {
 			debug.Printf("Encrypt: failed to encrypt: %s", err)
 		}
-		return nil, err
+		return nil, errors.Wrap(err, "failed to encrypt payload")
 	}
 
 	return CompactSerialize{}.Serialize(msg)
@@ -95,7 +95,7 @@ func Encrypt(payload []byte, keyalg jwa.KeyEncryptionAlgorithm, key interface{},
 func Decrypt(buf []byte, alg jwa.KeyEncryptionAlgorithm, key interface{}) ([]byte, error) {
 	msg, err := Parse(buf)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "failed to parse buffer for Decrypt")
 	}
 
 	return msg.Decrypt(alg, key)
@@ -127,7 +127,7 @@ func parseJSON(buf []byte) (*Message, error) {
 	}{}
 
 	if err := json.Unmarshal(buf, &m); err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "failed to parse JSON")
 	}
 
 	// if the "signature" field exist, treat it as a flattened
@@ -161,7 +161,7 @@ func parseCompact(buf []byte) (*Message, error) {
 
 	hdr := NewHeader()
 	if err := json.Unmarshal(hdrbuf, hdr); err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "failed to parse header JSON")
 	}
 
 	// We need the protected header to contain the content encryption
@@ -172,22 +172,22 @@ func parseCompact(buf []byte) (*Message, error) {
 
 	enckeybuf := buffer.Buffer{}
 	if err := enckeybuf.Base64Decode(parts[1]); err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "failed to base64 decode encryption key")
 	}
 
 	ivbuf := buffer.Buffer{}
 	if err := ivbuf.Base64Decode(parts[2]); err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "failed to base64 decode iv")
 	}
 
 	ctbuf := buffer.Buffer{}
 	if err := ctbuf.Base64Decode(parts[3]); err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "failed to base64 decode content")
 	}
 
 	tagbuf := buffer.Buffer{}
 	if err := tagbuf.Base64Decode(parts[4]); err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "failed to base64 decode tag")
 	}
 
 	m := NewMessage()
@@ -232,7 +232,7 @@ func BuildKeyDecrypter(alg jwa.KeyEncryptionAlgorithm, h *Header, key interface{
 	case jwa.ECDH_ES_A128KW, jwa.ECDH_ES_A192KW, jwa.ECDH_ES_A256KW:
 		epkif, err := h.Get("epk")
 		if err != nil {
-			return nil, err
+			return nil, errors.Wrap(err, "failed to get 'epk' field")
 		}
 		if epkif == nil {
 			return nil, errors.New("'epk' header is required as the key to build this key decrypter")
@@ -245,7 +245,7 @@ func BuildKeyDecrypter(alg jwa.KeyEncryptionAlgorithm, h *Header, key interface{
 
 		pubkey, err := epk.PublicKey()
 		if err != nil {
-			return nil, err
+			return nil, errors.Wrap(err, "failed to get public key")
 		}
 
 		privkey, ok := key.(*ecdsa.PrivateKey)
